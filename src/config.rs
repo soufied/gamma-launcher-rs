@@ -9,6 +9,8 @@ pub const MODS_DIR_NAME: &str = "mods";
 pub const GROK_INSTALLER_DIR_NAME: &str = ".Grok's Modpack Installer";
 pub const MODPACK_DIR_NAME: &str = "G.A.M.M.A";
 const FALLBACK_PROTON_PATH: &str = "/usr/share/steam/compatibilitytools.d/proton-cachyos-slr";
+pub const NATIVE_STEAM_PATH_DEFAULT: &str = "$HOME/.local/share/Steam";
+pub const SPACEWAR_APPID: &str = "480";
 
 fn default_true() -> bool {
     true
@@ -26,6 +28,12 @@ pub fn detected_cpu_count() -> u32 {
 
 fn default_gameid() -> String {
     "stalker-anomaly-gamma".to_string()
+}
+
+pub const DEFAULT_MO2_SHORTCUT_TITLE: &str = "Anomaly (DX11-AVX)";
+
+fn default_mo2_shortcut_title() -> String {
+    DEFAULT_MO2_SHORTCUT_TITLE.to_string()
 }
 
 fn default_wine_prefix() -> Option<PathBuf> {
@@ -75,6 +83,23 @@ pub fn default_dxvk_config() -> String {
     )
 }
 
+fn default_player_nickname() -> String {
+    match std::env::var("USER") {
+        Ok(value) if !value.trim().is_empty() && !value.trim().eq_ignore_ascii_case("steamuser") => {
+            value.trim().to_string()
+        }
+        _ => "Stalker".to_string(),
+    }
+}
+
+pub fn default_xray_dll_overrides() -> String {
+    "openal32=n,b;d3dcompiler_47=n,b".to_string()
+}
+
+fn default_mangohud_enabled() -> bool {
+    crate::fsutil::tool_available("mangohud")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunnerSettings {
     #[serde(default = "default_proton_path")]
@@ -109,6 +134,10 @@ pub struct RunnerSettings {
     pub launcher_executable: Option<PathBuf>,
     #[serde(default)]
     pub game_executable: Option<PathBuf>,
+    #[serde(default = "default_mo2_shortcut_title")]
+    pub mo2_shortcut_title: String,
+    #[serde(default = "default_true")]
+    pub headless_mod_launch: bool,
 }
 
 impl Default for RunnerSettings {
@@ -130,17 +159,195 @@ impl Default for RunnerSettings {
             mo2_executable: None,
             launcher_executable: None,
             game_executable: None,
+            mo2_shortcut_title: default_mo2_shortcut_title(),
+            headless_mod_launch: true,
         }
     }
 }
 
 impl RunnerSettings {
+    pub fn effective_mo2_shortcut_title(&self) -> String {
+        let trimmed = self.mo2_shortcut_title.trim();
+        if trimmed.is_empty() {
+            DEFAULT_MO2_SHORTCUT_TITLE.to_string()
+        } else {
+            trimmed.to_string()
+        }
+    }
+
     pub fn reset_dll_overrides(&mut self) {
         self.wine_dll_overrides = default_dll_overrides();
     }
 
     pub fn reset_dxvk_config(&mut self) {
         self.dxvk_config = default_dxvk_config();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PresentMode {
+    Mailbox,
+    Immediate,
+    Fifo,
+    RelaxedFifo,
+}
+
+impl PresentMode {
+    pub fn mesa_value(&self) -> &'static str {
+        match self {
+            PresentMode::Mailbox => "mailbox",
+            PresentMode::Immediate => "immediate",
+            PresentMode::Fifo => "fifo",
+            PresentMode::RelaxedFifo => "relaxed",
+        }
+    }
+}
+
+impl Default for PresentMode {
+    fn default() -> Self {
+        PresentMode::Mailbox
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SyncMode {
+    Fsync,
+    Esync,
+    SystemDefault,
+}
+
+impl Default for SyncMode {
+    fn default() -> Self {
+        SyncMode::Fsync
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpacewarSettings {
+    #[serde(default = "default_false")]
+    pub steam_spacewar_mode: bool,
+    #[serde(default = "default_player_nickname")]
+    pub player_nickname: String,
+    #[serde(default = "default_true")]
+    pub force_nickname_override: bool,
+    #[serde(default)]
+    pub custom_steam_path: Option<PathBuf>,
+    #[serde(default = "default_true")]
+    pub steam_check_running: bool,
+}
+
+impl Default for SpacewarSettings {
+    fn default() -> Self {
+        Self {
+            steam_spacewar_mode: false,
+            player_nickname: default_player_nickname(),
+            force_nickname_override: true,
+            custom_steam_path: None,
+            steam_check_running: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CloseAction {
+    Exit,
+    MinimizeToTray,
+}
+
+impl Default for CloseAction {
+    fn default() -> Self {
+        CloseAction::Exit
+    }
+}
+
+impl CloseAction {
+    pub fn label(&self) -> &'static str {
+        match self {
+            CloseAction::Exit => "Exit",
+            CloseAction::MinimizeToTray => "Minimize to tray",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            CloseAction::Exit => {
+                "Closing the window terminates the launcher immediately and cleanly. Recommended on KDE Plasma 6 / Wayland to avoid ghost taskbar entries."
+            }
+            CloseAction::MinimizeToTray => {
+                "Closing the window hides the launcher to the system tray instead of quitting it. Any game or MO2 process already running keeps running."
+            }
+        }
+    }
+}
+
+fn default_close_action() -> CloseAction {
+    CloseAction::Exit
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraySettings {
+    #[serde(default = "default_true")]
+    pub minimize_to_tray: bool,
+    #[serde(default = "default_close_action")]
+    pub close_action: CloseAction,
+    #[serde(default = "default_false")]
+    pub start_in_tray: bool,
+}
+
+impl Default for TraySettings {
+    fn default() -> Self {
+        Self {
+            minimize_to_tray: true,
+            close_action: default_close_action(),
+            start_in_tray: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphicsSettings {
+    #[serde(default)]
+    pub fps_limit: u32,
+    #[serde(default = "default_true")]
+    pub dxvk_async: bool,
+    #[serde(default = "default_true")]
+    pub dxvk_state_cache: bool,
+    #[serde(default)]
+    pub vk_wsi_present_mode: PresentMode,
+    #[serde(default = "default_true")]
+    pub nvidia_shader_cache_optimization: bool,
+    #[serde(default = "default_true")]
+    pub mesa_shader_cache_optimization: bool,
+    #[serde(default = "default_true")]
+    pub wine_large_address_aware: bool,
+    #[serde(default)]
+    pub sync_mechanism: SyncMode,
+    #[serde(default = "default_xray_dll_overrides")]
+    pub dll_overrides: String,
+    #[serde(default = "default_mangohud_enabled")]
+    pub enable_mangohud: bool,
+}
+
+impl GraphicsSettings {
+    pub fn reset_dll_overrides(&mut self) {
+        self.dll_overrides = default_xray_dll_overrides();
+    }
+}
+
+impl Default for GraphicsSettings {
+    fn default() -> Self {
+        Self {
+            fps_limit: 0,
+            dxvk_async: true,
+            dxvk_state_cache: true,
+            vk_wsi_present_mode: PresentMode::default(),
+            nvidia_shader_cache_optimization: true,
+            mesa_shader_cache_optimization: true,
+            wine_large_address_aware: true,
+            sync_mechanism: SyncMode::default(),
+            dll_overrides: default_xray_dll_overrides(),
+            enable_mangohud: default_mangohud_enabled(),
+        }
     }
 }
 
@@ -184,6 +391,12 @@ pub struct AppConfig {
     pub runner: RunnerSettings,
     #[serde(default)]
     pub proxy: ProxyConfig,
+    #[serde(default)]
+    pub spacewar: SpacewarSettings,
+    #[serde(default)]
+    pub tray: TraySettings,
+    #[serde(default)]
+    pub graphics: GraphicsSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,6 +467,9 @@ impl Default for AppConfig {
             dark_mode: true,
             runner: RunnerSettings::default(),
             proxy: ProxyConfig::default(),
+            spacewar: SpacewarSettings::default(),
+            tray: TraySettings::default(),
+            graphics: GraphicsSettings::default(),
         }
     }
 }

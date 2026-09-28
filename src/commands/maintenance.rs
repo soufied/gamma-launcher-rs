@@ -7,14 +7,12 @@ use crate::config::{
 use crate::error::{LauncherError, Result};
 use crate::fsutil::{self, PermissionOutcome};
 use crate::mods::{modpack_data_dir, read_mod_maker};
+use crate::process::{self, SharedProcessRegistry};
 use crate::report::{human_bytes, Reporter};
 use crate::runner::{escape_ini_backslashes, linux_to_wine_path, repaired_wine_path, wine_path_needs_repair};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::thread;
-use std::time::Duration;
 use walkdir::WalkDir;
 
 const TEMP_PREFIXES: [&str; 2] = ["gamma-launcher-", "gamma_launcher-"];
@@ -31,18 +29,6 @@ const PREFIX_GRAPHICS_CACHES: [&str; 3] = [
     "drive_c/users/steamuser/AppData/Local/AMD/DxCache",
     "drive_c/ProgramData/NVIDIA Corporation/NV_Cache",
 ];
-const PROCESS_NEEDLES: [&str; 8] = [
-    "modorganizer",
-    "anomalydx",
-    "anomalylauncher",
-    "xrengine",
-    "usvfs_proxy",
-    "umu-run",
-    "wineserver",
-    "reshade",
-];
-const TERMINATION_ATTEMPTS: u32 = 12;
-const TERMINATION_DELAY: Duration = Duration::from_millis(250);
 const MISSING_PREVIEW_LIMIT: usize = 8;
 const INI_FILE_NAME: &str = "ModOrganizer.ini";
 const INI_BACKUP_NAME: &str = "ModOrganizer.ini.bak";
@@ -247,95 +233,10 @@ pub fn prune_incomplete_downloads(args: &CommandArgs, reporter: &Reporter) -> Re
     Ok(())
 }
 
-#[derive(Debug, Clone)]
-struct RunningProcess {
-    pid: u32,
-    name: String,
-}
-
-#[cfg(target_os = "linux")]
-fn process_identity(pid: u32) -> Option<(String, String)> {
-    let comm = fs::read_to_string(format!("/proc/{pid}/comm"))
-        .ok()
-        .map(|value| value.trim().to_string())
-        .unwrap_or_default();
-
-    let cmdline = fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
-    let program = cmdline
-        .split(|byte| *byte == 0)
-        .next()
-        .map(|slice| String::from_utf8_lossy(slice).to_string())
-        .unwrap_or_default();
-
-    let basename = Path::new(&program)
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_default();
-
-    if comm.is_empty() && basename.is_empty() {
-        return None;
-    }
-
-    Some((comm, basename))
-}
-
-#[cfg(target_os = "linux")]
-fn running_processes() -> Vec<RunningProcess> {
-    let own = std::process::id();
-    let mut found = Vec::new();
-
-    let entries = match fs::read_dir("/proc") {
-        Ok(entries) => entries,
-        Err(_) => return found,
-    };
-
-    for entry in entries.flatten() {
-        let pid: u32 = match entry.file_name().to_str().and_then(|name| name.parse().ok()) {
-            Some(pid) => pid,
-            None => continue,
-        };
-
-        if pid == own || pid <= 1 {
-            continue;
-        }
-
-        let (comm, basename) = match process_identity(pid) {
-            Some(identity) => identity,
-            None => continue,
-        };
-
-        let haystacks = [comm.to_lowercase(), basename.to_lowercase()];
-        let matched = PROCESS_NEEDLES
-            .iter()
-            .any(|needle| haystacks.iter().any(|value| value.contains(needle)));
-
-        if !matched {
-            continue;
-        }
-
-        let name = if basename.is_empty() { comm } else { basename };
-        found.push(RunningProcess { pid, name });
-    }
-
-    found.sort_by_key(|process| process.pid);
-    found
-}
-
-#[cfg(not(target_os = "linux"))]
-fn running_processes() -> Vec<RunningProcess> {
-    Vec::new()
-}
-
-fn send_signal(signal: &str, pid: u32) -> bool {
-    Command::new("kill")
-        .arg(format!("-{signal}"))
-        .arg(pid.to_string())
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
-pub fn kill_game_processes(reporter: &Reporter) -> Result<()> {
+pub fn kill_game_processes(
+    reporter: &Reporter,
+    adopted_processes: &SharedProcessRegistry,
+) -> Result<()> {
     if !fsutil::tool_available("kill") {
         return Err(LauncherError::CommandFailed {
             command: "kill".to_string(),
@@ -343,53 +244,10 @@ pub fn kill_game_processes(reporter: &Reporter) -> Result<()> {
         });
     }
 
-    let targets = running_processes();
-
-    if targets.is_empty() {
-        reporter.info("[*] No Anomaly, Mod Organizer 2 or Wine helper process is running");
-        return Ok(());
+    match process::terminate_all(adopted_processes, reporter) {
+        Ok(_terminated) => Ok(()),
+        Err(error) => Err(LauncherError::Other(error.to_string())),
     }
-
-    reporter.info(format!(
-        "[+] Terminating {} process(es) related to the Zone",
-        targets.len()
-    ));
-
-    for target in &targets {
-        reporter.info(format!("  - SIGTERM {} (PID {})", target.name, target.pid));
-        send_signal("TERM", target.pid);
-    }
-
-    for _ in 0..TERMINATION_ATTEMPTS {
-        if running_processes().is_empty() {
-            reporter.info("[+] Every matching process has exited");
-            return Ok(());
-        }
-        thread::sleep(TERMINATION_DELAY);
-    }
-
-    let survivors = running_processes();
-
-    for target in &survivors {
-        reporter.warn(format!(
-            "  ! {} (PID {}) ignored SIGTERM, sending SIGKILL",
-            target.name, target.pid
-        ));
-        send_signal("KILL", target.pid);
-    }
-
-    thread::sleep(TERMINATION_DELAY);
-    let remaining = running_processes();
-
-    if remaining.is_empty() {
-        reporter.info("[+] Every matching process has exited");
-        return Ok(());
-    }
-
-    Err(LauncherError::Other(format!(
-        "{} process(es) survived SIGKILL, they are probably stuck in an uninterruptible state",
-        remaining.len()
-    )))
 }
 
 pub fn reset_wine_prefix(config: &AppConfig, reporter: &Reporter) -> Result<()> {
@@ -408,7 +266,8 @@ pub fn reset_wine_prefix(config: &AppConfig, reporter: &Reporter) -> Result<()> 
         return Ok(());
     }
 
-    if !running_processes().is_empty() {
+    let (still_running, _) = process::scan_once();
+    if !still_running.is_empty() {
         return Err(LauncherError::Other(
             "a game or Wine helper process is still running, terminate it before resetting the prefix"
                 .to_string(),

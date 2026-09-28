@@ -27,6 +27,12 @@ pub enum LauncherError {
     CommandFailed { command: String, message: String },
     #[error("the operation was cancelled by the user")]
     Cancelled,
+    #[error("Steam Spacewar integration failed: {0}")]
+    SteamIdentity(String),
+    #[error("system tray service failed: {0}")]
+    Tray(String),
+    #[error("process discovery/termination failed: {0}")]
+    ProcessControl(String),
     #[error("{0}")]
     Other(String),
 }

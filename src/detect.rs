@@ -501,6 +501,11 @@ fn compat_tool_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+pub fn list_proton_builds() -> Vec<PathBuf> {
+    let mut messages = Vec::new();
+    proton_builds(&mut messages)
+}
+
 fn proton_builds(messages: &mut Vec<String>) -> Vec<PathBuf> {
     let mut builds = Vec::new();
 

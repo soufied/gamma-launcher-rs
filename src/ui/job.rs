@@ -5,6 +5,7 @@ use crate::commands::{
 use crate::config::AppConfig;
 use crate::error::{LauncherError, Result};
 use crate::mods::downloader::base::configure_http_client;
+use crate::process::SharedProcessRegistry;
 use crate::report::{Reporter, TaskEvent};
 use crate::runner::{self, JobHandle, LaunchTarget, ProcessState, Waker};
 use std::sync::mpsc::{self, Receiver};
@@ -87,6 +88,7 @@ async fn execute(
     config: AppConfig,
     reporter: &Reporter,
     process_state: &ProcessState,
+    adopted_processes: &SharedProcessRegistry,
     bg_reporter: Reporter,
     wake: Waker,
 ) -> Result<()> {
@@ -106,7 +108,7 @@ async fn execute(
         Job::PurgeDownloads => maintenance::purge_downloads(&args, reporter),
         Job::ClearTempCache => maintenance::clear_temp_cache(reporter),
         Job::PruneIncompleteDownloads => maintenance::prune_incomplete_downloads(&args, reporter),
-        Job::KillProcesses => maintenance::kill_game_processes(reporter),
+        Job::KillProcesses => maintenance::kill_game_processes(reporter, adopted_processes),
         Job::ResetWinePrefix => maintenance::reset_wine_prefix(&config, reporter),
         Job::ResetGraphicsState => maintenance::reset_graphics_state(&args, &config, reporter),
         Job::RebuildModCache => maintenance::rebuild_mod_cache(&args, reporter),
@@ -114,9 +116,15 @@ async fn execute(
         Job::RepairModOrganizerPaths => repair_mod_organizer_paths(&args, reporter),
         Job::ReindexPresets => maintenance::reindex_presets(&args, reporter),
         Job::FixPermissions => maintenance::fix_permissions(&args, reporter),
-        Job::Launch(target) => {
-            runner::launch(&config, target, reporter, process_state, bg_reporter, wake)
-        }
+        Job::Launch(target) => runner::launch(
+            &config,
+            target,
+            reporter,
+            process_state,
+            adopted_processes,
+            bg_reporter,
+            wake,
+        ),
     }
 }
 
@@ -138,6 +146,7 @@ pub fn spawn(
     job: Job,
     config: AppConfig,
     process_state: ProcessState,
+    adopted_processes: SharedProcessRegistry,
     bg_reporter: Reporter,
     control: JobHandle,
     ctx: egui::Context,
@@ -178,6 +187,7 @@ pub fn spawn(
             config,
             &reporter,
             &process_state,
+            &adopted_processes,
             bg_reporter,
             wake,
         ));
