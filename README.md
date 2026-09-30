@@ -2,7 +2,7 @@
 
 **A native Linux installer, updater, and launcher for the S.T.A.L.K.E.R. Anomaly / G.A.M.M.A. modpack.**
 
-> ⚠️ **Notice:** Steam integration is currently **non-functional** (launching via Spacewar AppID 480 could not be successfully implemented). All Steam-related features are deprecated and disabled.
+> ⚠️ **Notice:** Steam integration is currently **non-functional** (launching via Spacewar AppID 480 could not be successfully implemented).
 
 ---
 
@@ -90,7 +90,7 @@ sudo apt install -y build-essential curl pkg-config libssl-dev wine wine64 \
 ### Building
 
 ```bash
-git clone <repository-url> gamma-launcher-rust
+git clone https://github.com/soufied/gamma-launcher-rs.git gamma-launcher-rust
 cd gamma-launcher-rust
 cargo build --release
 ```
