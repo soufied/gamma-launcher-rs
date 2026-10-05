@@ -2,6 +2,8 @@
 
 **A native Linux installer, updater, and launcher for the S.T.A.L.K.E.R. Anomaly / G.A.M.M.A. modpack.**
 
+Built purely to make the installation and setup hassle-free, so anyone can easily install and jump straight into the Zone.
+
 > ⚠️ **Notice:** Steam integration is currently **non-functional** (launching via Spacewar AppID 480 could not be successfully implemented).
 
 ---
@@ -25,9 +27,10 @@ Linux-only (relies directly on `/proc` and Linux-specific tooling).
 | Platform | Support | Notes |
 |---|---|---|
 | **Arch Linux / CachyOS / Manjaro** | ✅ Primary | Defaults tuned for CachyOS and native package layout. |
-| **Debian / Ubuntu / Pop!_OS** | ✅ Supported | Requires manual package installation (`wine`, `umu-launcher`, etc.). |
-| **Fedora / openSUSE** | ✅ Supported | Install distribution equivalents for build and runtime tools. |
-| **Windows / macOS** | ❌ Unsupported | Unix-specific code paths (`/proc`, `wineserver`, signals). |
+| **Debian / Ubuntu / Pop!_OS** | ⚠️ Untested | Expected to work. Requires manual package installation (`wine`, `umu-launcher`, etc.). |
+| **Fedora / openSUSE** | ⚠️ Untested | Expected to work. Install distribution equivalents for build and runtime tools. |
+| **Windows** | ❌ Unsupported | Use official launcher. |
+| **macOS** | ❌ Unsupported | Not planned. |
 
 ---
 
@@ -77,7 +80,7 @@ sudo pacman -S --needed base-devel rustup wine wine-mono wine-gecko unrar \
 # Optional integrations
 sudo pacman -S --needed gamemode lib32-gamemode mangohud lib32-mangohud
 paru -S umu-launcher-git
-# ~~sudo pacman -S --needed steam~~ (no longer required)
+# sudo pacman -S --needed steam
 ```
 
 #### Debian / Ubuntu
@@ -124,9 +127,9 @@ enabled = false
 host = ""
 port = 1080
 
-# ~~[spacewar]~~
-# ~~steam_spacewar_mode = false~~
-# ~~player_nickname = "Stalker"~~
+# [spacewar]
+# steam_spacewar_mode = false
+# player_nickname = "Stalker"
 
 [tray]
 minimize_to_tray = true
