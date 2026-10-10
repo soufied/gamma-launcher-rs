@@ -10,7 +10,7 @@ Built purely to make the installation and setup hassle-free, so anyone can easil
 
 ## Overview
 
-[S.T.A.L.K.E.R. G.A.M.M.A.](https://github.com/Grokitach/gamma_setup) is a modpack for **S.T.A.L.K.E.R. Anomaly**. Officially, installation requires Windows-only PowerShell/Python scripts and Mod Organizer 2 (MO2) under Wine/Proton.
+[S.T.A.L.K.E.R. G.A.M.M.A.](https://github.com/Grokitach/gamma_setup) is a modpack for **S.T.A.L.K.E.R. Anomaly**. Officially, installation requires Windows-only PowerShell/Python scripts.
 
 **Gamma Launcher Rust** is a standalone, single-binary Linux application that handles the entire G.A.M.M.A. setup, patching, mod verification, and launching via **Wine, Proton, or UMU** natively. This project is based on [Mord3rca/gamma-launcher](https://github.com/Mord3rca/gamma-launcher), rewritten and reimplemented in Rust.
 
