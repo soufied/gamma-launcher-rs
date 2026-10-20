@@ -146,8 +146,4 @@ This project is based on and inspired by the original work in [gamma-launcher](h
 
 ## License
 
-<<<<<<< HEAD
-GPL-3.0-only. See `Cargo.toml`.
-=======
 GPL-3.0-only. See [LICENSE](LICENSE).
->>>>>>> b34c0f7 (docs: add LICENSE)
